@@ -191,12 +191,6 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
-	else {
-		if (get_gpio_direction(gpio_number) < 0) {
-			fprintf(stderr, "Cannot get gpio direction: %s\n", strerror(errno));
-			return 1;
-		}
-	}
 
 	if (gpio_value) {
 		if (set_gpio_value(gpio_number, gpio_value) < 0) {
@@ -204,11 +198,15 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
-	else {
-		if (get_gpio_value(gpio_number) < 0) {
-			fprintf(stderr, "Cannot set gpio value: %s\n", strerror(errno));
-			return 1;
-		}
+
+	if (get_gpio_direction(gpio_number) < 0) {
+		fprintf(stderr, "Cannot get gpio direction: %s\n", strerror(errno));
+		return 1;
+	}
+
+	if (get_gpio_value(gpio_number) < 0) {
+		fprintf(stderr, "Cannot get gpio value: %s\n", strerror(errno));
+		return 1;
 	}
 
 	return 0;
