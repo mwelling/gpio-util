@@ -132,7 +132,10 @@ int get_gpio_value(char * gpio_number)
 
 void print_usage()
 {
-	printf("USAGE: gpio -n N [-d N] [-v N]\n");
+	printf("USAGE:\tgpio -n NUM [-d DIR] [-v VAL]\n");
+	printf("\t-n, --number    NUM\tGPIO number NUM.\n");
+	printf("\t-d, --direction DIR\tSet GPIO direction DIR. { in, out }\n");
+	printf("\t-v, --value     VAL\tSet GPIO value VAL. { 0, 1 }\n");
 }
 
 int main(int argc, char **argv)
