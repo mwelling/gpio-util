@@ -79,11 +79,11 @@ int get_gpio_direction(char * gpio_number)
 	if (fd < 0)
 		return fd;
 
-	ret = read(fd, direction, 3);
-	direction[3] = '\0';
-
-	if(ret > 0)
+	ret = read(fd, direction, 4);
+	if(ret > 0) {
+		direction[ret-1] = '\0';
 		printf("gpio direction = %s\n", direction);
+	}
 
 	close(fd);
 	return ret;
@@ -120,11 +120,11 @@ int get_gpio_value(char * gpio_number)
 	if (fd < 0)
 		return fd;
 
-	ret = read(fd, value, 1);
-	value[1] = '\0';
-
-	if(ret > 0)
+	ret = read(fd, value, 2);
+	if(ret > 0) {
+		value[ret-1] = '\0';
 		printf("gpio value = %s\n", value);
+	}
 
 	close(fd);
 	return ret;
