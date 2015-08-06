@@ -33,7 +33,7 @@ int gpio_exported(char * gpio_number)
 int export_gpio(char * gpio_number)
 {
 	int fd;
-	int ret;	
+	int ret;
 
 	if (gpio_exported(gpio_number))
 		return 0;
@@ -144,10 +144,10 @@ int main(int argc, char **argv)
 	char *gpio_number = NULL;
 	char *gpio_value = NULL;
 	char *gpio_direction = NULL;
-	int option_index = 0;
+	int opt_i = 0;
 	int c;
 
-	static struct option long_options[]=
+	static struct option long_opts[]=
 	{
 		{ "value", required_argument, 0, 'v' },
 		{ "number", required_argument, 0, 'n' },
@@ -155,7 +155,7 @@ int main(int argc, char **argv)
 		{ 0, 0, 0, 0 },
 	};
 
-	while((c = getopt_long (argc, argv, "v:n:d:", long_options, &option_index)) != -1)
+	while((c = getopt_long(argc, argv, "v:n:d:", long_opts, &opt_i)) != -1)
 	{
 		switch(c)
 		{
@@ -187,25 +187,29 @@ int main(int argc, char **argv)
 
 	if (gpio_direction) {
 		if (set_gpio_direction(gpio_number, gpio_direction) < 0) {
-			fprintf(stderr, "Cannot set gpio direction: %s\n", strerror(errno));
+			fprintf(stderr, "Cannot set gpio direction: %s\n",
+				strerror(errno));
 			return 1;
 		}
 	}
 
 	if (gpio_value) {
 		if (set_gpio_value(gpio_number, gpio_value) < 0) {
-			fprintf(stderr, "Cannot set gpio value: %s\n", strerror(errno));
+			fprintf(stderr, "Cannot set gpio value: %s\n",
+				strerror(errno));
 			return 1;
 		}
 	}
 
 	if (get_gpio_direction(gpio_number) < 0) {
-		fprintf(stderr, "Cannot get gpio direction: %s\n", strerror(errno));
+		fprintf(stderr, "Cannot get gpio direction: %s\n",
+			strerror(errno));
 		return 1;
 	}
 
 	if (get_gpio_value(gpio_number) < 0) {
-		fprintf(stderr, "Cannot get gpio value: %s\n", strerror(errno));
+		fprintf(stderr, "Cannot get gpio value: %s\n",
+			strerror(errno));
 		return 1;
 	}
 
