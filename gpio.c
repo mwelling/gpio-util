@@ -3,7 +3,7 @@
  *
  * Linux GPIO userspace utility (character interface)
  *
- * Copyright (C) 2016 QWERTY Embedded Design
+ * Copyright (C) 2015, 2016 QWERTY Embedded Design
  * Michael Welling <mwelling@ieee.org>
  *
  * Based on gpio-hammer.c
