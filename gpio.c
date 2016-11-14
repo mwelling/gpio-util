@@ -1,10 +1,13 @@
 /*
  * gpio.c
  *
- * Linux GPIO userspace utility
+ * Linux GPIO userspace utility (character interface)
  *
- * Copyright (C) 2015 QWERTY Embedded Design
+ * Copyright (C) 2016 QWERTY Embedded Design
  * Michael Welling <mwelling@ieee.org>
+ *
+ * Based on gpio-hammer.c
+ * Copyright (C) 2016 Linus Walleij
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,153 +23,61 @@
 #include <unistd.h>
 #include <errno.h>
 #include <getopt.h>
-
-int gpio_exported(char * gpio_number)
-{
-	char gpio_dir[256];
-	struct stat s;
-
-	sprintf(gpio_dir, "/sys/class/gpio/gpio%s", gpio_number);
-	return (stat(gpio_dir, &s) == 0);
-}
-
-int export_gpio(char * gpio_number)
-{
-	int fd;
-	int ret;
-
-	if (gpio_exported(gpio_number))
-		return 0;
-
-	fd = open("/sys/class/gpio/export", O_WRONLY);
-	if (fd < 0)
-		return fd;
-
-	ret = write(fd, gpio_number, strlen(gpio_number));
-
-	close(fd);
-	return ret;
-}
-
-int set_gpio_direction(char * gpio_number, char * direction)
-{
-	int fd;
-	int ret;
-	char dir_file[256];
-
-	sprintf(dir_file, "/sys/class/gpio/gpio%s/direction", gpio_number);
-
-	fd = open(dir_file, O_RDWR);
-	if (fd < 0)
-		return fd;
-
-	ret = write(fd, direction, strlen(direction));
-
-	close(fd);
-	return ret;
-}
-
-int get_gpio_direction(char * gpio_number)
-{
-	int fd;
-	int ret;
-	char dir_file[256];
-	char direction[4];
-
-	sprintf(dir_file, "/sys/class/gpio/gpio%s/direction", gpio_number);
-
-	fd = open(dir_file, O_RDWR);
-	if (fd < 0)
-		return fd;
-
-	ret = read(fd, direction, 4);
-	if(ret > 0) {
-		direction[ret-1] = '\0';
-		printf("gpio direction = %s\n", direction);
-	}
-
-	close(fd);
-	return ret;
-}
-
-int set_gpio_value(char * gpio_number, char * value)
-{
-	int fd;
-	int ret;
-	char val_file[256];
-
-	sprintf(val_file, "/sys/class/gpio/gpio%s/value", gpio_number);
-
-	fd = open(val_file, O_RDWR);
-	if (fd < 0)
-		return fd;
-
-	ret = write(fd, value, strlen(value));
-
-	close(fd);
-	return ret;
-}
-
-int get_gpio_value(char * gpio_number)
-{
-	int fd;
-	int ret;
-	char val_file[256];
-	char value[2];
-
-	sprintf(val_file, "/sys/class/gpio/gpio%s/value", gpio_number);
-
-	fd = open(val_file, O_RDWR);
-	if (fd < 0)
-		return fd;
-
-	ret = read(fd, value, 2);
-	if(ret > 0) {
-		value[ret-1] = '\0';
-		printf("gpio value = %s\n", value);
-	}
-
-	close(fd);
-	return ret;
-}
+#include <sys/ioctl.h>
+#include <linux/gpio.h>
 
 void print_usage()
 {
-	printf("USAGE:\tgpio -n NUM [-d DIR] [-v VAL]\n");
-	printf("\t-n, --number    NUM\tGPIO number NUM.\n");
-	printf("\t-d, --direction DIR\tSet GPIO direction DIR. { in, out }\n");
-	printf("\t-v, --value     VAL\tSet GPIO value VAL. { 0, 1 }\n");
+	printf("USAGE:\tgpio -n NAME -o OFF [-d DIR] [-v VAL]\n");
+	printf("\t-n, --name      NAME\tGPIO device name.\n");
+	printf("\t-o, --offset    OFF\tGPIO device offset.\n");
+	printf("\t-d, --direction DIR\tSet GPIO direction. { in, out }\n");
+	printf("\t-v, --value     VAL\tSet GPIO values in binary.\n");
+	printf("\nEXAMPLE: gpio -n gpiochip0 -o0 -o1 -o2 -d out -v 001\n");
 }
 
 int main(int argc, char **argv)
 {
 	int fd;
-	char *gpio_number = NULL;
-	char *gpio_value = NULL;
-	char *gpio_direction = NULL;
+	char *gpio_name = NULL;
+	unsigned int lines[GPIOHANDLES_MAX];
+	char *value = NULL;
+	char *direction = NULL;
+	int nlines = 0;
+	char *chrdev_name;
+	struct gpiohandle_request req;
+	struct gpiohandle_data data;
+	int ret;
 	int opt_i = 0;
 	int c;
+	int i;
 
 	static struct option long_opts[]=
 	{
-		{ "value", required_argument, 0, 'v' },
-		{ "number", required_argument, 0, 'n' },
 		{ "direction", required_argument, 0, 'd' },
+		{ "name", required_argument, 0, 'n' },
+		{ "offset", required_argument, 0, 'o' },
+		{ "value", required_argument, 0, 'v' },
 		{ 0, 0, 0, 0 },
 	};
 
-	while((c = getopt_long(argc, argv, "v:n:d:", long_opts, &opt_i)) != -1)
+	while((c = getopt_long(argc, argv, "d:n:o:v:",
+			       long_opts, &opt_i)) != -1)
 	{
 		switch(c)
 		{
+		case 'd':
+			direction = optarg;
+			break;
 		case 'n':
-			gpio_number = optarg;
+			gpio_name = optarg;
+			break;
+		case 'o':
+			lines[nlines] = strtoul(optarg, NULL, 10);
+			nlines++;
 			break;
 		case 'v':
-			gpio_value = optarg;
-			break;
-		case 'd':
-			gpio_direction = optarg;
+			value = optarg;
 			break;
 		case '?':
 			print_usage();
@@ -175,43 +86,86 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (gpio_number == NULL) {
+	if (!gpio_name || !nlines) {
 		print_usage();
-		return 1;
+		return -EINVAL;
 	}
 
-	if (export_gpio(gpio_number) < 0) {
-		fprintf(stderr, "Cannot export gpio: %s\n", strerror(errno));
-		return 1;
+	ret = asprintf(&chrdev_name, "/dev/%s", gpio_name);
+	if (ret < 0) {
+		fprintf(stderr, "Out of memory\n", chrdev_name);
+		return -ENOMEM;
 	}
 
-	if (gpio_direction) {
-		if (set_gpio_direction(gpio_number, gpio_direction) < 0) {
-			fprintf(stderr, "Cannot set gpio direction: %s\n",
-				strerror(errno));
-			return 1;
+	fd = open(chrdev_name, 0);
+	if (fd < 0) {
+		ret = -errno;
+		fprintf(stderr, "Failed to open %s\n", chrdev_name);
+		goto exit_free_error;
+	}
+
+	for (i = 0; i < nlines; i++)
+		req.lineoffsets[i] = lines[i];
+
+	if (direction) {
+		if (strcmp(direction, "out") == 0)
+			req.flags = GPIOHANDLE_REQUEST_OUTPUT;
+		else if (strcmp(direction, "in") == 0)
+			req.flags = GPIOHANDLE_REQUEST_INPUT;
+		else {
+			fprintf(stderr, "Invalid direction %s\n", direction);
+			ret = -EINVAL;
+			goto exit_close_error;
+		}
+	}
+	else {
+		req.flags = GPIOHANDLE_REQUEST_INPUT;
+	}
+
+	strcpy(req.consumer_label, "gpio-util");
+	req.lines = nlines;
+
+	ret = ioctl(fd, GPIO_GET_LINEHANDLE_IOCTL, &req);
+	if (ret == -1) {
+		ret = -errno;
+		fprintf(stderr, "Failed to issue GET LINEHANDLE "
+			"IOCTL (%d)\n",
+			ret);
+		goto exit_close_error;
+	}
+
+	if (value && (req.flags == GPIOHANDLE_REQUEST_OUTPUT)) {
+		for(i = 0; i < nlines; i++)
+			data.values[i] = value[i % strlen(value)] - '0';
+
+		ret = ioctl(req.fd, GPIOHANDLE_SET_LINE_VALUES_IOCTL, &data);
+		if (ret == -1) {
+			ret = -errno;
+			fprintf(stderr, "Failed to issue GPIOHANDLE SET LINE "
+				"VALUES IOCTL (%d)\n",
+				ret);
+			goto exit_close_error;
 		}
 	}
 
-	if (gpio_value) {
-		if (set_gpio_value(gpio_number, gpio_value) < 0) {
-			fprintf(stderr, "Cannot set gpio value: %s\n",
-				strerror(errno));
-			return 1;
-		}
+	ret = ioctl(req.fd, GPIOHANDLE_GET_LINE_VALUES_IOCTL, &data);
+	if (ret == -1) {
+		ret = -errno;
+		fprintf(stderr, "Failed to issue GPIOHANDLE GET LINE "
+			"VALUES IOCTL (%d)\n",
+			ret);
+		goto exit_close_error;
 	}
 
-	if (get_gpio_direction(gpio_number) < 0) {
-		fprintf(stderr, "Cannot get gpio direction: %s\n",
-			strerror(errno));
-		return 1;
+	for (i = 0; i < nlines; i++) {
+		printf("%s[%d] = %d\n", gpio_name, lines[i], data.values[i]);
 	}
 
-	if (get_gpio_value(gpio_number) < 0) {
-		fprintf(stderr, "Cannot get gpio value: %s\n",
-			strerror(errno));
-		return 1;
-	}
+exit_close_error:
+	if (close(fd) == -1)
+		perror("Failed to close GPIO character device file");
+exit_free_error:
+	free(chrdev_name);
 
-	return 0;
+	return ret;
 }
